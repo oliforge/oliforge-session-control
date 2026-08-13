@@ -22,6 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'OLIFORGE_SESSION_CONTROL_VERSION', '1.2.0' );
 define( 'OLIFORGE_SESSION_CONTROL_FILE', __FILE__ );
 define( 'OLIFORGE_SESSION_CONTROL_PATH', plugin_dir_path( __FILE__ ) );
+define( 'OLIFORGE_SESSION_CONTROL_URL', plugin_dir_url( __FILE__ ) );
 
 require_once OLIFORGE_SESSION_CONTROL_PATH . 'includes/class-oliforge-session-control.php';
 

@@ -10,6 +10,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 delete_option( 'oliforge_session_control_settings' );
+delete_option( 'oliforge_session_control_db_version' );
 
 delete_metadata(
 	'user',
@@ -18,3 +19,6 @@ delete_metadata(
 	'',
 	true
 );
+
+global $wpdb;
+$wpdb->query( 'DROP TABLE IF EXISTS ' . $wpdb->prefix . 'oliforge_session_log' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange
