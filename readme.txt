@@ -4,7 +4,7 @@ Tags: session, security, login, authentication, timeout
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 2.0.0
+Stable tag: 2.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -27,6 +27,13 @@ It also adds an Active Sessions screen with:
 * Delete from List to remove a row from the log only — it never signs anyone out.
 * Sync current sessions, a one-click backfill for sessions that were already open before this feature was enabled, using WordPress's own stored login time, IP address and user agent.
 
+On WordPress Multisite networks, network administrators also get:
+
+* A Network Sessions screen (Network Admin > Settings) that aggregates every site's session log into one searchable, sortable, paginated table.
+* Site, User, Device, IP, Status, Logged In and Last Active columns, with Terminate Session and Delete from List available per row and in bulk across sites.
+* A warning notice if a network is too large to fully scan in one pass, instead of silently showing incomplete results.
+* Every site keeps its own independent session log and settings; a single-site installation is completely unaffected by this feature and behaves exactly as before.
+
 The plugin uses the WordPress Settings API and native authentication hooks. It does not send data to external services.
 
 Settings are available under Settings > OliForge Session Control, and the session log under Settings > OliForge Active Sessions.
@@ -38,6 +45,7 @@ Settings are available under Settings > OliForge Session Control, and the sessio
 3. Open Settings > OliForge Session Control.
 4. Configure the session and idle timeout values.
 5. Open Settings > OliForge Active Sessions to review and manage logged-in sessions.
+6. On a Multisite network, network administrators can also open Network Admin > Settings > OliForge Network Sessions for an aggregated, network-wide view.
 
 == Frequently Asked Questions ==
 
@@ -61,11 +69,22 @@ Not automatically — the log only records logins from the moment this feature i
 
 No. It only removes that row from the log. Use "Terminate Session" to actually end a live session.
 
+= Does this work on WordPress Multisite? =
+
+Yes. Each site in the network keeps its own independent settings and session log, exactly as on a single-site install. Network administrators additionally get a Network Sessions screen under Network Admin > Settings that aggregates every site's log into one table. On a very large network, results may be capped per pass; a notice on the Network Sessions screen says so rather than showing an incomplete picture silently.
+
 = Are settings removed when the plugin is uninstalled? =
 
-Yes. The plugin's settings option, activity user meta, and session-log database table are all removed during uninstall.
+Yes. The plugin's settings option, activity user meta, and session-log database table are all removed during uninstall. On multisite, this currently runs for the site the uninstall was triggered from; other sites' session-log tables are not automatically dropped.
 
 == Changelog ==
+
+= 2.1.0 =
+* Added a Network Sessions screen (Network Admin > Settings, multisite only) that aggregates every site's session log into one searchable, role-filterable, sortable, paginated table.
+* Added a Site column and cross-site Terminate Session / Delete from List row and bulk actions, switching into each row's own site before acting on it.
+* Added a "Network Sessions" tab, shown only to network administrators on a multisite install.
+* Added a truncation warning on the Network Sessions screen if a network has more sites, or a site has more matching sessions, than a single pass can merge and sort.
+* All multisite code is gated behind is_multisite() and never runs on a single-site install, which continues to behave exactly as before.
 
 = 2.0.0 =
 * Added a new Active Sessions screen backed by its own database table — a persistent login history independent of WordPress's own session-token storage.
@@ -97,6 +116,9 @@ Yes. The plugin's settings option, activity user meta, and session-log database 
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.1.0 =
+Adds a Network Sessions aggregate screen for multisite networks (Network Admin > Settings). No effect on single-site installs, which behave exactly as before.
 
 = 2.0.0 =
 Adds a new Active Sessions log (own database table) with search, filtering, sorting, pagination, session termination and a redesigned admin UI. Creates a new database table on upgrade; existing settings are unaffected.

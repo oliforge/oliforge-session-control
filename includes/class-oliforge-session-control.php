@@ -30,6 +30,20 @@ final class OliForge_Session_Control {
 	public const SESSIONS_PAGE_SLUG = 'oliforge-session-control-sessions';
 
 	/**
+	 * Slug of the Network Admin "Network Sessions" page (multisite only).
+	 */
+	public const NETWORK_PAGE_SLUG = 'oliforge-session-control-network';
+
+	/**
+	 * Safety caps for the network-wide aggregate query: how many sites to
+	 * loop over, and how many rows to pull from each site before merging and
+	 * sorting in PHP. Cross-site sorting can't be pushed down to SQL without
+	 * a shared table, so this bounds the worst case on very large networks.
+	 */
+	private const NETWORK_SITE_CAP          = 200;
+	private const NETWORK_PER_SITE_ROW_CAP  = 500;
+
+	/**
 	 * Option holding the installed session-log table schema version, bumped
 	 * whenever the table shape changes so dbDelta() re-runs on upgrade.
 	 */
@@ -138,6 +152,14 @@ final class OliForge_Session_Control {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_init', array( $this, 'maybe_upgrade_log_table' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
+
+		// Network-wide aggregate view — only relevant, and only registered, on multisite.
+		// A plain single-site install never fires these hooks, so it keeps behaving exactly
+		// as it did before: fully isolated, no network-admin code path involved at all.
+		if ( is_multisite() ) {
+			add_action( 'network_admin_menu', array( $this, 'register_network_page' ) );
+			add_action( 'network_admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
+		}
 
 		add_action( 'init', array( $this, 'maybe_logout_inactive_user' ), 20 );
 		add_action( 'wp_login', array( $this, 'set_login_activity_timestamp' ), 10, 2 );
@@ -259,6 +281,26 @@ final class OliForge_Session_Control {
 	}
 
 	/**
+	 * Registers the Network Admin "Network Sessions" page (multisite only).
+	 *
+	 * @return void
+	 */
+	public function register_network_page(): void {
+		$network_hook = add_submenu_page(
+			'settings.php',
+			__( 'Network Sessions', 'oliforge-session-control' ),
+			__( 'OliForge Network Sessions', 'oliforge-session-control' ),
+			'manage_network_users',
+			self::NETWORK_PAGE_SLUG,
+			array( $this, 'render_network_sessions_page' )
+		);
+
+		if ( $network_hook ) {
+			add_action( 'load-' . $network_hook, array( $this, 'handle_network_sessions_table_actions' ) );
+		}
+	}
+
+	/**
 	 * Registers plugin settings.
 	 *
 	 * @return void
@@ -285,6 +327,7 @@ final class OliForge_Session_Control {
 		$allowed_hooks = array(
 			'settings_page_oliforge-session-control',
 			'settings_page_' . self::SESSIONS_PAGE_SLUG,
+			'settings_page_' . self::NETWORK_PAGE_SLUG,
 		);
 
 		if ( ! in_array( $hook_suffix, $allowed_hooks, true ) ) {
@@ -489,9 +532,9 @@ final class OliForge_Session_Control {
 	}
 
 	/**
-	 * Renders the Settings / Active Sessions tab bar.
+	 * Renders the Settings / Active Sessions (/ Network Sessions) tab bar.
 	 *
-	 * @param string $current Either 'settings' or 'sessions'.
+	 * @param string $current One of 'settings', 'sessions', 'network'.
 	 * @return void
 	 */
 	private function render_nav_tabs( string $current ): void {
@@ -505,6 +548,14 @@ final class OliForge_Session_Control {
 				'url'   => admin_url( 'options-general.php?page=' . self::SESSIONS_PAGE_SLUG ),
 			),
 		);
+
+		// Only network admins on a multisite install can reach the aggregate view.
+		if ( is_multisite() && current_user_can( 'manage_network_users' ) ) {
+			$tabs['network'] = array(
+				'label' => __( 'Network Sessions', 'oliforge-session-control' ),
+				'url'   => network_admin_url( 'settings.php?page=' . self::NETWORK_PAGE_SLUG ),
+			);
+		}
 		?>
 		<nav class="oliforge-tabs">
 			<?php foreach ( $tabs as $key => $tab ) : ?>
@@ -547,6 +598,43 @@ final class OliForge_Session_Control {
 			<div class="oliforge-card oliforge-card--table">
 				<form method="get">
 					<input type="hidden" name="page" value="<?php echo esc_attr( self::SESSIONS_PAGE_SLUG ); ?>" />
+					<?php
+					$list_table->search_box( __( 'Search sessions', 'oliforge-session-control' ), 'oliforge-session' );
+					$list_table->display();
+					?>
+				</form>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Renders the Network Admin "Network Sessions" aggregate page.
+	 *
+	 * @return void
+	 */
+	public function render_network_sessions_page(): void {
+		if ( ! current_user_can( 'manage_network_users' ) ) {
+			wp_die( esc_html__( 'You are not allowed to access this page.', 'oliforge-session-control' ) );
+		}
+
+		require_once OLIFORGE_SESSION_CONTROL_PATH . 'includes/class-oliforge-network-session-list-table.php';
+
+		$list_table = new OliForge_Network_Session_List_Table();
+		$list_table->prepare_items();
+		?>
+		<div class="wrap oliforge-session-control-ui">
+			<?php
+			$this->render_brand_header( __( 'Session Control', 'oliforge-session-control' ), __( 'Network Sessions', 'oliforge-session-control' ) );
+			$this->render_nav_tabs( 'network' );
+			?>
+			<p class="oliforge-lede"><?php echo esc_html__( 'Every logged session across all sites in this network, in one place. Terminate a still-active session to sign that device out, or delete a row to remove it from the log. Each site keeps its own log — run "Sync current sessions" on a site\'s own Active Sessions screen to backfill sessions that predate this feature there.', 'oliforge-session-control' ); ?></p>
+
+			<?php $list_table->maybe_render_truncation_notice(); ?>
+
+			<div class="oliforge-card oliforge-card--table">
+				<form method="get">
+					<input type="hidden" name="page" value="<?php echo esc_attr( self::NETWORK_PAGE_SLUG ); ?>" />
 					<?php
 					$list_table->search_box( __( 'Search sessions', 'oliforge-session-control' ), 'oliforge-session' );
 					$list_table->display();
@@ -748,6 +836,178 @@ final class OliForge_Session_Control {
 		$tokens = WP_Session_Tokens::get_instance( $user_id )->get_all();
 
 		return isset( $tokens[ $token ] ) && ! empty( $tokens[ $token ]['expiration'] ) && $tokens[ $token ]['expiration'] >= time();
+	}
+
+	/**
+	 * Processes the "Network Sessions" table's row and bulk actions. Same
+	 * shape as handle_sessions_table_actions(), but refs are "blog_id:row_id"
+	 * since a row can belong to any site in the network.
+	 *
+	 * @return void
+	 */
+	public function handle_network_sessions_table_actions(): void {
+		if ( ! current_user_can( 'manage_network_users' ) ) {
+			return;
+		}
+
+		if ( isset( $_GET['oliforge_net_terminate'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- verified via check_admin_referer() below.
+			check_admin_referer( 'oliforge_terminate_session' );
+			$this->terminate_network_sessions( array( sanitize_text_field( wp_unslash( $_GET['oliforge_net_terminate'] ) ) ) );
+			wp_safe_redirect( remove_query_arg( array( 'oliforge_net_terminate', '_wpnonce' ) ) );
+			exit;
+		}
+
+		if ( isset( $_GET['oliforge_net_delete'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- verified via check_admin_referer() below.
+			check_admin_referer( 'oliforge_delete_session' );
+			$this->delete_network_log_rows( array( sanitize_text_field( wp_unslash( $_GET['oliforge_net_delete'] ) ) ) );
+			wp_safe_redirect( remove_query_arg( array( 'oliforge_net_delete', '_wpnonce' ) ) );
+			exit;
+		}
+
+		$action = '';
+		if ( isset( $_REQUEST['action'] ) && '-1' !== $_REQUEST['action'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- verified via check_admin_referer() below.
+			$action = sanitize_key( wp_unslash( $_REQUEST['action'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		} elseif ( isset( $_REQUEST['action2'] ) && '-1' !== $_REQUEST['action2'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$action = sanitize_key( wp_unslash( $_REQUEST['action2'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+
+		if ( in_array( $action, array( 'terminate', 'delete' ), true ) && isset( $_REQUEST['session'] ) ) {
+			check_admin_referer( 'bulk-sessions' );
+			$selected = array_map( 'sanitize_text_field', wp_unslash( (array) $_REQUEST['session'] ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+
+			if ( 'terminate' === $action ) {
+				$this->terminate_network_sessions( $selected );
+			} else {
+				$this->delete_network_log_rows( $selected );
+			}
+
+			wp_safe_redirect( remove_query_arg( array( 'action', 'action2', 'session', '_wpnonce' ) ) );
+			exit;
+		}
+	}
+
+	/**
+	 * Ends the live session for one or more "blog_id:row_id" refs, switching
+	 * to each row's site first so its log table is the one being read.
+	 *
+	 * @param string[] $refs "blog_id:row_id" refs.
+	 * @return void
+	 */
+	private function terminate_network_sessions( array $refs ): void {
+		foreach ( $this->parse_network_refs( $refs ) as $blog_id => $row_ids ) {
+			switch_to_blog( $blog_id );
+			$this->terminate_sessions( $row_ids );
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Deletes one or more "blog_id:row_id" log rows ("Delete from List"),
+	 * switching to each row's site first.
+	 *
+	 * @param string[] $refs "blog_id:row_id" refs.
+	 * @return void
+	 */
+	private function delete_network_log_rows( array $refs ): void {
+		foreach ( $this->parse_network_refs( $refs ) as $blog_id => $row_ids ) {
+			switch_to_blog( $blog_id );
+			$this->delete_log_rows( $row_ids );
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Groups "blog_id:row_id" refs by blog id, so each site is only
+	 * switched to once regardless of how many of its rows were selected.
+	 *
+	 * @param string[] $refs "blog_id:row_id" refs.
+	 * @return array<int, int[]> blog_id => row ids.
+	 */
+	private function parse_network_refs( array $refs ): array {
+		$grouped = array();
+
+		foreach ( $refs as $ref ) {
+			$parts = explode( ':', (string) $ref, 2 );
+			if ( 2 !== count( $parts ) ) {
+				continue;
+			}
+
+			$blog_id = absint( $parts[0] );
+			$row_id  = absint( $parts[1] );
+
+			if ( $blog_id <= 0 || $row_id <= 0 ) {
+				continue;
+			}
+
+			$grouped[ $blog_id ][] = $row_id;
+		}
+
+		return $grouped;
+	}
+
+	/**
+	 * Aggregates session-log rows across every site in the network.
+	 *
+	 * Search/role filtering and per-site sorting reuse query_sessions() by
+	 * switching into each site in turn (session tokens themselves live in
+	 * shared, network-wide usermeta, but the log table and role/capability
+	 * checks are per-site). Cross-site sorting can't be pushed down to SQL
+	 * without a shared table, so each site contributes up to
+	 * NETWORK_PER_SITE_ROW_CAP rows, which are then merged, sorted and
+	 * paginated in PHP. See maybe_render_truncation_notice() for what
+	 * happens when a network or a single site is larger than the caps.
+	 *
+	 * @param string $search   Search term (login/email/display name).
+	 * @param string $role     Role slug.
+	 * @param string $orderby  'logged_in' or 'last_active'.
+	 * @param string $order    'asc' or 'desc'.
+	 * @param int    $per_page Rows per page.
+	 * @param int    $page     1-based page number.
+	 * @return array{items: object[], total: int, sites_truncated: bool, rows_truncated: bool}
+	 */
+	public function query_network_sessions( string $search, string $role, string $orderby, string $order, int $per_page, int $page ): array {
+		$sites            = get_sites( array( 'number' => self::NETWORK_SITE_CAP ) );
+		$sites_truncated  = count( $sites ) >= self::NETWORK_SITE_CAP;
+		$rows_truncated   = false;
+		$all              = array();
+
+		foreach ( $sites as $site ) {
+			$blog_id = (int) $site->blog_id;
+			switch_to_blog( $blog_id );
+
+			$result = $this->query_sessions( $search, $role, $orderby, $order, self::NETWORK_PER_SITE_ROW_CAP, 1 );
+
+			if ( $result['total'] > self::NETWORK_PER_SITE_ROW_CAP ) {
+				$rows_truncated = true;
+			}
+
+			foreach ( $result['items'] as $row ) {
+				$row->blog_id = $blog_id;
+				$all[]        = $row;
+			}
+
+			restore_current_blog();
+		}
+
+		$orderby_prop = 'last_active' === $orderby ? 'last_seen_at' : 'login_at';
+		usort(
+			$all,
+			static function ( $a, $b ) use ( $orderby_prop, $order ) {
+				$cmp = ( (int) $a->$orderby_prop ) <=> ( (int) $b->$orderby_prop );
+
+				return 'asc' === $order ? $cmp : -$cmp;
+			}
+		);
+
+		$total  = count( $all );
+		$offset = max( 0, ( $page - 1 ) * $per_page );
+
+		return array(
+			'items'           => array_slice( $all, $offset, $per_page ),
+			'total'           => $total,
+			'sites_truncated' => $sites_truncated,
+			'rows_truncated'  => $rows_truncated,
+		);
 	}
 
 	/**

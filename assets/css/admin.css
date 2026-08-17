@@ -435,6 +435,17 @@
     color:var(--oli-neutral)
 }
 
+.oliforge-session-control-ui .column-site a {
+    color:var(--oli-ink);
+    font-weight:600;
+    text-decoration:none
+}
+
+.oliforge-session-control-ui .column-site a:hover {
+    color:var(--oli-primary);
+    text-decoration:underline
+}
+
 .oliforge-terminate-link {
     color:var(--oli-danger)
 }
