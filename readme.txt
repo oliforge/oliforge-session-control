@@ -4,7 +4,7 @@ Tags: session, security, login, authentication, timeout
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 2.1.0
+Stable tag: 2.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -36,7 +36,7 @@ On WordPress Multisite networks, network administrators also get:
 
 The plugin uses the WordPress Settings API and native authentication hooks. It does not send data to external services.
 
-Settings are available under Settings > OliForge Session Control, and the session log under Settings > OliForge Active Sessions.
+Settings are available under Settings > OliForge Session Control, and the session log under its Active Sessions tab.
 
 == Installation ==
 
@@ -44,7 +44,7 @@ Settings are available under Settings > OliForge Session Control, and the sessio
 2. Activate the plugin through the Plugins screen in WordPress.
 3. Open Settings > OliForge Session Control.
 4. Configure the session and idle timeout values.
-5. Open Settings > OliForge Active Sessions to review and manage logged-in sessions.
+5. Switch to the Active Sessions tab to review and manage logged-in sessions.
 6. On a Multisite network, network administrators can also open Network Admin > Settings > OliForge Network Sessions for an aggregated, network-wide view.
 
 == Frequently Asked Questions ==
@@ -75,9 +75,21 @@ Yes. Each site in the network keeps its own independent settings and session log
 
 = Are settings removed when the plugin is uninstalled? =
 
-Yes. The plugin's settings option, activity user meta, and session-log database table are all removed during uninstall. On multisite, this currently runs for the site the uninstall was triggered from; other sites' session-log tables are not automatically dropped.
+Yes. The plugin removes its settings, legacy activity metadata, scheduled cleanup event, and session-log database table. On multisite, uninstall cleanup runs across all sites in the network.
 
 == Changelog ==
+
+= 2.2.1 =
+* Removed "Active Sessions" as a separate item under the Settings menu; it remains reachable as a tab on the OliForge Session Control settings page.
+* Hardened direct database queries (session log table name and dynamic IN()/ORDER BY clauses now use `$wpdb->prepare()`'s `%i` identifier placeholder) and corrected several PHPCS suppression comments that had drifted out of sync with the sniffs they were meant to silence.
+
+= 2.2.0 =
+* Store only SHA-256 session verifiers in the plugin log; legacy raw tokens are migrated and removed.
+* Fix Active/Ended detection, session termination and current-session sync.
+* Track idle activity per session instead of per user.
+* Add multisite table lifecycle for network activation and new sites.
+* Add configurable session-log retention with daily cleanup.
+* Split session storage, repository, manager, idle-timeout, schema and admin responsibilities.
 
 = 2.1.0 =
 * Added a Network Sessions screen (Network Admin > Settings, multisite only) that aggregates every site's session log into one searchable, role-filterable, sortable, paginated table.
@@ -116,6 +128,12 @@ Yes. The plugin's settings option, activity user meta, and session-log database 
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.1 =
+Active Sessions is no longer a separate Settings submenu item — find it as a tab on the OliForge Session Control settings page. No functional or data changes.
+
+= 2.2.0 =
+Security/session-model upgrade: raw session tokens are migrated to SHA-256 verifiers and removed; Active/Ended, Terminate and Sync are corrected; idle activity is tracked per session; multisite lifecycle and session-log retention are added.
 
 = 2.1.0 =
 Adds a Network Sessions aggregate screen for multisite networks (Network Admin > Settings). No effect on single-site installs, which behave exactly as before.

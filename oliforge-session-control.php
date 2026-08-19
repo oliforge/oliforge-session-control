@@ -3,7 +3,7 @@
  * Plugin Name:       OliForge Session Control
  * Plugin URI:        https://oliforge.com/
  * Description:       Manage WordPress authentication cookie lifetimes and optional idle logout timeouts, with a searchable, filterable Active Sessions log and a network-wide aggregate view on multisite.
- * Version:           2.1.0
+ * Version:           2.2.1
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            OliForge
@@ -19,11 +19,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'OLIFORGE_SESSION_CONTROL_VERSION', '2.1.0' );
+define( 'OLIFORGE_SESSION_CONTROL_VERSION', '2.2.1' );
 define( 'OLIFORGE_SESSION_CONTROL_FILE', __FILE__ );
 define( 'OLIFORGE_SESSION_CONTROL_PATH', plugin_dir_path( __FILE__ ) );
 define( 'OLIFORGE_SESSION_CONTROL_URL', plugin_dir_url( __FILE__ ) );
 
+require_once OLIFORGE_SESSION_CONTROL_PATH . 'includes/class-oliforge-session-store.php';
+require_once OLIFORGE_SESSION_CONTROL_PATH . 'includes/class-oliforge-session-repository.php';
+require_once OLIFORGE_SESSION_CONTROL_PATH . 'includes/class-oliforge-database-schema.php';
+require_once OLIFORGE_SESSION_CONTROL_PATH . 'includes/class-oliforge-session-manager.php';
+require_once OLIFORGE_SESSION_CONTROL_PATH . 'includes/class-oliforge-session-admin.php';
+require_once OLIFORGE_SESSION_CONTROL_PATH . 'includes/class-oliforge-idle-timeout.php';
 require_once OLIFORGE_SESSION_CONTROL_PATH . 'includes/class-oliforge-session-control.php';
 
 /**
@@ -37,3 +43,4 @@ function oliforge_session_control_boot(): void {
 add_action( 'plugins_loaded', 'oliforge_session_control_boot' );
 
 register_activation_hook( __FILE__, array( 'OliForge_Session_Control', 'activate' ) );
+register_deactivation_hook( __FILE__, array( 'OliForge_Session_Control', 'deactivate' ) );

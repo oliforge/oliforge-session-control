@@ -86,12 +86,12 @@ final class OliForge_Session_List_Table extends WP_List_Table {
 		}
 
 		$is_you    = (int) get_current_user_id() === (int) $user->ID
-			&& hash_equals( (string) wp_get_session_token(), (string) $item->token );
+			&& hash_equals( OliForge_Session_Control::instance()->current_session_hash(), (string) $item->session_hash );
 		$you_badge = $is_you
 			? ' <span class="oliforge-badge oliforge-badge--you">' . esc_html__( 'You', 'oliforge-session-control' ) . '</span>'
 			: '';
 
-		$is_active = OliForge_Session_Control::instance()->is_session_active( (int) $user->ID, (string) $item->token );
+		$is_active = OliForge_Session_Control::instance()->is_session_active( (int) $user->ID, (string) $item->session_hash );
 		$role      = $this->primary_role_label( $user );
 
 		return sprintf(
@@ -173,7 +173,7 @@ final class OliForge_Session_List_Table extends WP_List_Table {
 	}
 
 	protected function column_status( $item ): string {
-		$is_active = OliForge_Session_Control::instance()->is_session_active( (int) $item->user_id, (string) $item->token );
+		$is_active = OliForge_Session_Control::instance()->is_session_active( (int) $item->user_id, (string) $item->session_hash );
 
 		return $is_active
 			? '<span class="oliforge-badge oliforge-badge--active">' . esc_html__( 'Active', 'oliforge-session-control' ) . '</span>'

@@ -20,11 +20,6 @@ final class OliForge_Session_Control {
 	private const OPTION_NAME = 'oliforge_session_control_settings';
 
 	/**
-	 * User-meta key used to store the last activity timestamp.
-	 */
-	private const LAST_ACTIVITY_META = '_oliforge_session_last_activity';
-
-	/**
 	 * Slug of the "Active Sessions" admin page.
 	 */
 	public const SESSIONS_PAGE_SLUG = 'oliforge-session-control-sessions';
@@ -44,22 +39,15 @@ final class OliForge_Session_Control {
 	private const NETWORK_PER_SITE_ROW_CAP  = 500;
 
 	/**
-	 * Option holding the installed session-log table schema version, bumped
-	 * whenever the table shape changes so dbDelta() re-runs on upgrade.
-	 */
-	private const DB_VERSION_OPTION = 'oliforge_session_control_db_version';
-
-	/**
-	 * Current session-log table schema version.
-	 */
-	private const DB_VERSION = '1.0';
-
-	/**
 	 * Singleton instance.
 	 *
 	 * @var self|null
 	 */
 	private static ?self $instance = null;
+
+	private OliForge_Session_Repository $repository;
+	private OliForge_Session_Manager $session_manager;
+	private OliForge_Database_Schema $schema;
 
 	/**
 	 * Returns the singleton instance.
@@ -79,97 +67,91 @@ final class OliForge_Session_Control {
 	 *
 	 * @return void
 	 */
-	public static function activate(): void {
+	public static function activate( bool $network_wide = false ): void {
+		if ( is_multisite() && $network_wide ) {
+			$site_ids = get_sites( array( 'fields' => 'ids', 'number' => 0 ) );
+			foreach ( $site_ids as $site_id ) {
+				switch_to_blog( (int) $site_id );
+				self::activate_current_site();
+				restore_current_blog();
+			}
+			return;
+		}
+
+		self::activate_current_site();
+	}
+
+	private static function activate_current_site(): void {
 		if ( false === get_option( self::OPTION_NAME ) ) {
 			add_option( self::OPTION_NAME, self::defaults() );
 		}
-
-		self::create_or_upgrade_log_table();
-	}
-
-	/**
-	 * Returns the fully-qualified name of the session-log table.
-	 *
-	 * @return string
-	 */
-	private static function log_table(): string {
-		global $wpdb;
-
-		return $wpdb->prefix . 'oliforge_session_log';
-	}
-
-	/**
-	 * Creates the session-log table, or brings an existing one up to date.
-	 * Safe to call repeatedly — dbDelta() only applies the diff.
-	 *
-	 * @return void
-	 */
-	private static function create_or_upgrade_log_table(): void {
-		global $wpdb;
-
-		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-
-		$table           = self::log_table();
-		$charset_collate = $wpdb->get_charset_collate();
-
-		$sql = "CREATE TABLE {$table} (
-			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-			user_id BIGINT UNSIGNED NOT NULL,
-			token VARCHAR(255) NOT NULL,
-			ip VARCHAR(100) NOT NULL DEFAULT '',
-			user_agent VARCHAR(255) NOT NULL DEFAULT '',
-			login_at BIGINT UNSIGNED NOT NULL,
-			last_seen_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
-			PRIMARY KEY  (id),
-			KEY user_id (user_id),
-			KEY user_token (user_id, token(64))
-		) {$charset_collate};";
-
-		dbDelta( $sql );
-
-		update_option( self::DB_VERSION_OPTION, self::DB_VERSION );
-	}
-
-	/**
-	 * Re-runs the table creation on version bumps for sites that updated the
-	 * plugin without deactivating/reactivating it.
-	 *
-	 * @return void
-	 */
-	public function maybe_upgrade_log_table(): void {
-		if ( get_option( self::DB_VERSION_OPTION ) !== self::DB_VERSION ) {
-			self::create_or_upgrade_log_table();
+		( new OliForge_Database_Schema() )->install();
+		if ( ! wp_next_scheduled( 'oliforge_session_control_cleanup' ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'oliforge_session_control_cleanup' );
 		}
+	}
+
+	private static function log_table(): string {
+		return OliForge_Session_Repository::table();
+	}
+
+	public function maybe_upgrade_log_table(): void {
+		if ( $this->schema->needs_upgrade() ) {
+			$this->schema->install();
+		}
+	}
+
+	public function initialize_new_site( WP_Site $new_site ): void {
+		if ( ! is_multisite() ) {
+			return;
+		}
+		switch_to_blog( (int) $new_site->blog_id );
+		self::activate_current_site();
+		restore_current_blog();
 	}
 
 	/**
 	 * Registers hooks.
 	 */
 	private function __construct() {
+		$store                 = new OliForge_Session_Store();
+		$this->repository      = new OliForge_Session_Repository();
+		$this->session_manager = new OliForge_Session_Manager( $store, $this->repository );
+		$this->schema          = new OliForge_Database_Schema();
+		( new OliForge_Session_Admin() )->register( $this );
 		add_filter( 'auth_cookie_expiration', array( $this, 'filter_auth_cookie_expiration' ), 10, 3 );
 
-		add_action( 'admin_menu', array( $this, 'register_settings_page' ) );
-		add_action( 'admin_init', array( $this, 'register_settings' ) );
-		add_action( 'admin_init', array( $this, 'maybe_upgrade_log_table' ) );
-		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 
 		// Network-wide aggregate view — only relevant, and only registered, on multisite.
 		// A plain single-site install never fires these hooks, so it keeps behaving exactly
 		// as it did before: fully isolated, no network-admin code path involved at all.
 		if ( is_multisite() ) {
-			add_action( 'network_admin_menu', array( $this, 'register_network_page' ) );
-			add_action( 'network_admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
+			add_action( 'wp_initialize_site', array( $this, 'initialize_new_site' ), 20, 1 );
 		}
 
 		add_action( 'init', array( $this, 'maybe_logout_inactive_user' ), 20 );
-		add_action( 'wp_login', array( $this, 'set_login_activity_timestamp' ), 10, 2 );
+		add_action( 'oliforge_session_control_cleanup', array( $this, 'cleanup_session_log' ) );
+		if ( ! wp_next_scheduled( 'oliforge_session_control_cleanup' ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'oliforge_session_control_cleanup' );
+		}
 		add_action( 'set_auth_cookie', array( $this, 'log_new_session' ), 10, 6 );
-		add_action( 'wp_logout', array( $this, 'clear_activity_timestamp' ), 10, 1 );
 
 		add_filter(
 			'plugin_action_links_' . plugin_basename( OLIFORGE_SESSION_CONTROL_FILE ),
 			array( $this, 'add_settings_link' )
 		);
+	}
+
+	public static function deactivate( bool $network_wide = false ): void {
+		if ( is_multisite() && $network_wide ) {
+			foreach ( get_sites( array( 'fields' => 'ids', 'number' => 0 ) ) as $site_id ) {
+				switch_to_blog( (int) $site_id );
+				wp_clear_scheduled_hook( 'oliforge_session_control_cleanup' );
+				restore_current_blog();
+			}
+			return;
+		}
+		wp_clear_scheduled_hook( 'oliforge_session_control_cleanup' );
 	}
 
 	/**
@@ -185,6 +167,7 @@ final class OliForge_Session_Control {
 			'idle_minutes'           => 60,
 			'apply_to_admins'        => 1,
 			'apply_to_frontend_users'=> 1,
+			'log_retention_days'     => 90,
 		);
 	}
 
@@ -274,6 +257,9 @@ final class OliForge_Session_Control {
 			self::SESSIONS_PAGE_SLUG,
 			array( $this, 'render_sessions_page' )
 		);
+
+		// Keep the page reachable via the settings page's own tab bar, just not as a separate Settings submenu item.
+		remove_submenu_page( 'options-general.php', self::SESSIONS_PAGE_SLUG );
 
 		if ( $sessions_hook ) {
 			add_action( 'load-' . $sessions_hook, array( $this, 'handle_sessions_table_actions' ) );
@@ -374,6 +360,7 @@ final class OliForge_Session_Control {
 			'idle_minutes'            => min( 10080, max( 1, absint( $input['idle_minutes'] ?? $defaults['idle_minutes'] ) ) ),
 			'apply_to_admins'         => empty( $input['apply_to_admins'] ) ? 0 : 1,
 			'apply_to_frontend_users' => empty( $input['apply_to_frontend_users'] ) ? 0 : 1,
+			'log_retention_days'      => min( 3650, max( 1, absint( $input['log_retention_days'] ?? $defaults['log_retention_days'] ) ) ),
 		);
 	}
 
@@ -498,6 +485,15 @@ final class OliForge_Session_Control {
 							</fieldset>
 						</td>
 					</tr>
+
+					<tr>
+						<th scope="row"><label for="oliforge_log_retention_days"><?php echo esc_html__( 'Session log retention', 'oliforge-session-control' ); ?></label></th>
+						<td>
+							<input id="oliforge_log_retention_days" type="number" min="1" max="3650" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[log_retention_days]" value="<?php echo esc_attr( (string) $settings['log_retention_days'] ); ?>" />
+							<span><?php echo esc_html__( 'days to keep ended/inactive session log records.', 'oliforge-session-control' ); ?></span>
+						</td>
+					</tr>
+
 				</table>
 
 				<?php submit_button(); ?>
@@ -724,11 +720,11 @@ final class OliForge_Session_Control {
 		$table        = self::log_table();
 		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
 
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- $placeholders built above from a fixed count of %d tokens.
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT user_id, token FROM {$table} WHERE id IN ( {$placeholders} )", $ids ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- $table passed via %i; $placeholders built above from a fixed count of %d tokens matching $ids.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT user_id, session_hash FROM %i WHERE id IN ( {$placeholders} )", array_merge( array( $table ), $ids ) ) );
 
 		foreach ( $rows as $row ) {
-			WP_Session_Tokens::get_instance( (int) $row->user_id )->destroy( $row->token );
+			$this->session_manager->terminate( (int) $row->user_id, (string) $row->session_hash );
 		}
 	}
 
@@ -750,8 +746,8 @@ final class OliForge_Session_Control {
 		$table        = self::log_table();
 		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
 
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- $placeholders built above from a fixed count of %d tokens.
-		$wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE id IN ( {$placeholders} )", $ids ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- $table passed via %i; $placeholders built above from a fixed count of %d tokens matching $ids.
+		$wpdb->query( $wpdb->prepare( "DELETE FROM %i WHERE id IN ( {$placeholders} )", array_merge( array( $table ), $ids ) ) );
 	}
 
 	/**
@@ -774,7 +770,8 @@ final class OliForge_Session_Control {
 		global $wpdb;
 		$table = self::log_table();
 
-		$where = '';
+		$where_sql  = '';
+		$where_args = array();
 		if ( '' !== $search || '' !== $role ) {
 			$user_args = array( 'fields' => 'ID' );
 
@@ -796,25 +793,27 @@ final class OliForge_Session_Control {
 				);
 			}
 
-			$placeholders = implode( ',', array_fill( 0, count( $user_ids ), '%d' ) );
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $placeholders built above from a fixed count of %d tokens.
-			$where = $wpdb->prepare( " WHERE user_id IN ( {$placeholders} )", $user_ids );
+			// Not user-controllable text: $user_ids are WP_User ids from get_users(), each already absint()'d above.
+			$where_sql  = ' WHERE user_id IN ( ' . implode( ',', array_fill( 0, count( $user_ids ), '%d' ) ) . ' )';
+			$where_args = $user_ids;
 		}
 
+		// Not user-controllable text: resolved from a fixed two-value whitelist, never from raw request input.
 		$orderby_column = 'last_active' === $orderby ? 'last_seen_at' : 'login_at';
 		$order          = 'asc' === $order ? 'ASC' : 'DESC';
 
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- $where is already safely prepared above.
-		$total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}{$where}" );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- $table via %i; $where_sql is a fixed %d-token template resolved with $where_args (absint()'d get_users() ids) via array_merge() in this same prepare() call, not raw request input; the sniff cannot statically count array_merge()'s dynamic element count.
+		$total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i{$where_sql}", array_merge( array( $table ), $where_args ) ) );
 
 		$offset = max( 0, ( $page - 1 ) * $per_page );
 
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- $where already safely prepared above; $orderby_column/$order come from a fixed whitelist above, not raw user input.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- paginated admin list-table query, not a caching candidate; $table/$where_sql/$orderby_column/$order are all fixed/whitelisted, not raw request input (see prepare() call below).
 		$items = $wpdb->get_results(
+			// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- args passed via array_merge(), whose dynamic element count (from $where_args) the sniff cannot statically evaluate; actual count always matches the query's placeholders.
 			$wpdb->prepare(
-				"SELECT * FROM {$table}{$where} ORDER BY {$orderby_column} {$order} LIMIT %d OFFSET %d",
-				$per_page,
-				$offset
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $table via %i; $where_sql is a fixed %d-token template resolved with $where_args and LIMIT/OFFSET in this same prepare() call; $orderby_column/$order come from a fixed two-value whitelist above.
+				"SELECT * FROM %i{$where_sql} ORDER BY {$orderby_column} {$order} LIMIT %d OFFSET %d",
+				array_merge( array( $table ), $where_args, array( $per_page, $offset ) )
 			)
 		);
 
@@ -832,10 +831,12 @@ final class OliForge_Session_Control {
 	 * @param string $token   Session verifier token.
 	 * @return bool
 	 */
-	public function is_session_active( int $user_id, string $token ): bool {
-		$tokens = WP_Session_Tokens::get_instance( $user_id )->get_all();
+	public function is_session_active( int $user_id, string $session_hash ): bool {
+		return $this->session_manager->is_active( $user_id, $session_hash );
+	}
 
-		return isset( $tokens[ $token ] ) && ! empty( $tokens[ $token ]['expiration'] ) && $tokens[ $token ]['expiration'] >= time();
+	public function current_session_hash(): string {
+		return $this->session_manager->current_hash();
 	}
 
 	/**
@@ -1022,70 +1023,7 @@ final class OliForge_Session_Control {
 	 * @return int Number of rows inserted.
 	 */
 	public function sync_live_sessions(): int {
-		global $wpdb;
-		$table = self::log_table();
-
-		$existing = $wpdb->get_results( "SELECT user_id, token FROM {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-
-		$known = array();
-		foreach ( $existing as $row ) {
-			$known[ $row->user_id . ':' . $row->token ] = true;
-		}
-
-		$users = get_users(
-			array(
-				'meta_query' => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-					array(
-						'key'     => 'session_tokens',
-						'compare' => 'EXISTS',
-					),
-				),
-			)
-		);
-
-		$now      = time();
-		$inserted = 0;
-
-		foreach ( $users as $user ) {
-			$tokens = WP_Session_Tokens::get_instance( $user->ID )->get_all();
-
-			if ( ! $tokens ) {
-				continue;
-			}
-
-			$last_active = (int) get_user_meta( $user->ID, self::LAST_ACTIVITY_META, true );
-
-			foreach ( $tokens as $token => $session ) {
-				if ( empty( $session['expiration'] ) || $session['expiration'] < $now ) {
-					continue;
-				}
-
-				if ( isset( $known[ $user->ID . ':' . $token ] ) ) {
-					continue;
-				}
-
-				$login_at = isset( $session['login'] ) ? (int) $session['login'] : $now;
-				$ip       = isset( $session['ip'] ) ? (string) $session['ip'] : '';
-				$ua       = isset( $session['ua'] ) ? (string) $session['ua'] : '';
-
-				$wpdb->insert(
-					$table,
-					array(
-						'user_id'      => $user->ID,
-						'token'        => $token,
-						'ip'           => mb_substr( $ip, 0, 100 ),
-						'user_agent'   => mb_substr( $ua, 0, 255 ),
-						'login_at'     => $login_at,
-						'last_seen_at' => $last_active > 0 ? $last_active : $login_at,
-					),
-					array( '%d', '%s', '%s', '%s', '%d', '%d' )
-				);
-
-				++$inserted;
-			}
-		}
-
-		return $inserted;
+		return $this->session_manager->sync_all_live_sessions();
 	}
 
 	/**
@@ -1143,170 +1081,48 @@ final class OliForge_Session_Control {
 
 		$settings = $this->get_settings();
 		$user_id  = get_current_user_id();
-
 		if ( ! $this->should_apply_to_user( $user_id, $settings ) ) {
 			return;
 		}
 
-		if ( empty( $settings['enable_idle_logout'] ) ) {
-			$this->maybe_update_activity_timestamp( $user_id );
+		$session_hash = $this->session_manager->current_hash();
+		if ( '' === $session_hash ) {
 			return;
 		}
 
-		$now           = time();
-		$last_activity = (int) get_user_meta( $user_id, self::LAST_ACTIVITY_META, true );
-		$idle_seconds  = max( 1, absint( $settings['idle_minutes'] ) ) * MINUTE_IN_SECONDS;
-
-		if ( $last_activity > 0 && ( $now - $last_activity ) > $idle_seconds ) {
-			$request_uri = '/';
-
-			if ( isset( $_SERVER['REQUEST_URI'] ) ) {
-				$request_uri = sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
-			}
-
-			$redirect_to = wp_validate_redirect(
-				home_url( $request_uri ),
-				home_url( '/' )
-			);
-
-			wp_logout();
-			nocache_headers();
-
-			wp_safe_redirect(
-				wp_login_url(
-					add_query_arg(
-						'oliforge_session_expired',
-						'1',
-						$redirect_to
-					)
-				)
-			);
-			exit;
-		}
-
-		$this->maybe_update_activity_timestamp( $user_id, $last_activity, $now );
-	}
-
-	/**
-	 * Stores activity at login.
-	 *
-	 * @param string  $user_login User login.
-	 * @param WP_User $user       Logged-in user.
-	 * @return void
-	 */
-	public function set_login_activity_timestamp( string $user_login, WP_User $user ): void {
-		unset( $user_login );
-		$this->update_activity_timestamp( (int) $user->ID );
-	}
-
-	/**
-	 * Inserts a session-log row the moment a new auth cookie (i.e. a new
-	 * session token) is created. Fires for every login, "remember me" or
-	 * not, and hands us the token directly — unlike `wp_login`, where the
-	 * new cookie isn't yet reflected in the current request's $_COOKIE.
-	 *
-	 * @param string $auth_cookie Raw cookie value (unused).
-	 * @param int    $expire      Login-grace-period expiry (unused).
-	 * @param int    $expiration  Session expiration (unused).
-	 * @param int    $user_id     User the session belongs to.
-	 * @param string $scheme      Cookie scheme (unused).
-	 * @param string $token       Session verifier token.
-	 * @return void
-	 */
-	public function log_new_session( string $auth_cookie, int $expire, int $expiration, int $user_id, string $scheme, string $token ): void {
-		unset( $auth_cookie, $expire, $expiration, $scheme );
-
-		if ( $user_id <= 0 || '' === $token ) {
-			return;
-		}
-
-		$ip  = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
-		$ua  = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
 		$now = time();
-
-		global $wpdb;
-		$wpdb->insert(
-			self::log_table(),
-			array(
-				'user_id'      => $user_id,
-				'token'        => $token,
-				'ip'           => mb_substr( $ip, 0, 100 ),
-				'user_agent'   => mb_substr( $ua, 0, 255 ),
-				'login_at'     => $now,
-				'last_seen_at' => $now,
-			),
-			array( '%d', '%s', '%s', '%s', '%d', '%d' )
-		);
-	}
-
-	/**
-	 * Removes activity data at logout.
-	 *
-	 * @param int $user_id User ID.
-	 * @return void
-	 */
-	public function clear_activity_timestamp( int $user_id ): void {
-		if ( $user_id > 0 ) {
-			delete_user_meta( $user_id, self::LAST_ACTIVITY_META );
+		$last_activity = $this->session_manager->last_seen( $user_id, $session_hash );
+		if ( $last_activity <= 0 ) {
+			$this->session_manager->ensure_current_session_logged( $user_id );
+			$last_activity = $this->session_manager->last_seen( $user_id, $session_hash );
 		}
-	}
 
-	/**
-	 * Updates activity only when necessary.
-	 *
-	 * @param int      $user_id       User ID.
-	 * @param int|null $last_activity Existing timestamp.
-	 * @param int|null $now           Current timestamp.
-	 * @return void
-	 */
-	private function maybe_update_activity_timestamp(
-		int $user_id,
-		?int $last_activity = null,
-		?int $now = null
-	): void {
-		$now = $now ?? time();
-
-		if ( null === $last_activity ) {
-			$last_activity = (int) get_user_meta( $user_id, self::LAST_ACTIVITY_META, true );
+		if ( ! empty( $settings['enable_idle_logout'] ) ) {
+			$idle_seconds = max( 1, absint( $settings['idle_minutes'] ) ) * MINUTE_IN_SECONDS;
+			if ( $last_activity > 0 && ( $now - $last_activity ) > $idle_seconds ) {
+				OliForge_Idle_Timeout::expire_current_request();
+			}
 		}
 
 		if ( $last_activity <= 0 || ( $now - $last_activity ) >= 60 ) {
-			$this->update_activity_timestamp( $user_id, $now );
+			$this->session_manager->touch( $user_id, $session_hash, $now );
 		}
 	}
 
-	/**
-	 * Writes the activity timestamp.
-	 *
-	 * @param int      $user_id User ID.
-	 * @param int|null $now     Timestamp.
-	 * @return void
-	 */
-	private function update_activity_timestamp( int $user_id, ?int $now = null ): void {
-		if ( $user_id <= 0 ) {
+	public function log_new_session( string $auth_cookie, int $expire, int $expiration, int $user_id, string $scheme, string $token ): void {
+		unset( $auth_cookie, $expire, $expiration, $scheme );
+		if ( $user_id <= 0 || '' === $token ) {
 			return;
 		}
+		$ip  = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+		$ua  = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
+		$now = time();
+		$this->session_manager->log_raw_token( $user_id, $token, $ip, $ua, $now );
+	}
 
-		$now = $now ?? time();
-		update_user_meta( $user_id, self::LAST_ACTIVITY_META, $now );
-
-		// Also stamp the specific session row for this request, when we can
-		// identify it — not available at the login moment itself (the new
-		// cookie isn't in $_COOKIE yet), only on later requests.
-		$token = wp_get_session_token();
-		if ( '' !== $token ) {
-			global $wpdb;
-			$wpdb->update(
-				self::log_table(),
-				array( 'last_seen_at' => $now ),
-				array(
-					'user_id' => $user_id,
-					'token'   => $token,
-				),
-				array( '%d' ),
-				array( '%d', '%s' )
-			);
-		}
+	public function cleanup_session_log(): void {
+		$settings = $this->get_settings();
+		$this->repository->cleanup( max( 1, absint( $settings['log_retention_days'] ) ) );
 	}
 
 	/**
