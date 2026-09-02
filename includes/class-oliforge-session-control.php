@@ -525,6 +525,14 @@ final class OliForge_Session_Control {
 			</div>
 		</div>
 		<?php
+		/*
+		 * Marks where the branded header ends, so WP core's admin-notice relocation
+		 * (wp-admin/js/common.js) inserts notices here instead of after the <h1> it
+		 * finds inside the header card, which would visually place them inside it.
+		 */
+		?>
+		<hr class="wp-header-end">
+		<?php
 	}
 
 	/**
