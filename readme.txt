@@ -4,7 +4,7 @@ Tags: session, security, login, authentication, timeout
 Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 2.2.1
+Stable tag: 2.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -79,6 +79,9 @@ Yes. The plugin removes its settings, legacy activity metadata, scheduled cleanu
 
 == Changelog ==
 
+= 2.2.2 =
+* Added the Plugin URI header linking to the plugin page on oliforge.io.
+
 = 2.2.1 =
 * Removed "Active Sessions" as a separate item under the Settings menu; it remains reachable as a tab on the OliForge Session Control settings page.
 * Hardened direct database queries (session log table name and dynamic IN()/ORDER BY clauses now use `$wpdb->prepare()`'s `%i` identifier placeholder) and corrected several PHPCS suppression comments that had drifted out of sync with the sniffs they were meant to silence.
@@ -128,6 +131,9 @@ Yes. The plugin removes its settings, legacy activity metadata, scheduled cleanu
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.2 =
+Metadata only: adds the plugin page link. No functional or data changes.
 
 = 2.2.1 =
 Active Sessions is no longer a separate Settings submenu item — find it as a tab on the OliForge Session Control settings page. No functional or data changes.

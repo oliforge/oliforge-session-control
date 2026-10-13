@@ -3,7 +3,7 @@
  * Plugin Name:       OliForge Session Control
  * Plugin URI:       https://oliforge.io/plugins/oliforge-session-control/
  * Description:       Manage WordPress authentication cookie lifetimes and optional idle logout timeouts, with a searchable, filterable Active Sessions log and a network-wide aggregate view on multisite.
- * Version:           2.2.1
+ * Version:           2.2.2
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            OliForge™
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'OLIFORGE_SESSION_CONTROL_VERSION', '2.2.1' );
+define( 'OLIFORGE_SESSION_CONTROL_VERSION', '2.2.2' );
 define( 'OLIFORGE_SESSION_CONTROL_FILE', __FILE__ );
 define( 'OLIFORGE_SESSION_CONTROL_PATH', plugin_dir_path( __FILE__ ) );
 define( 'OLIFORGE_SESSION_CONTROL_URL', plugin_dir_url( __FILE__ ) );
