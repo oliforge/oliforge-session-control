@@ -35,6 +35,11 @@ final class OliForge_Session_Manager {
 		$this->repository->touch( $user_id, $session_hash, $timestamp );
 	}
 
+	/** SHA-256 verifier of a raw session token (the key WordPress uses in session_tokens). */
+	public function hash_raw_token( string $raw_token ): string {
+		return $this->store->hash_token( $raw_token );
+	}
+
 	public function log_raw_token( int $user_id, string $raw_token, string $ip, string $ua, int $timestamp ): void {
 		if ( '' === $raw_token ) {
 			return;

@@ -4,7 +4,7 @@ Tags: session, security, login, authentication, timeout
 Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 2.2.2
+Stable tag: 2.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -37,6 +37,10 @@ On WordPress Multisite networks, network administrators also get:
 The plugin uses the WordPress Settings API and native authentication hooks. It does not send data to external services.
 
 Settings are available under Settings > OliForge Session Control, and the session log under its Active Sessions tab.
+
+= Extending the plugin =
+
+Add-ons can adjust the settings per user with the `oliforge_session_control_user_settings` filter (keys: `normal_hours`, `remember_days`, `allow_remember`, `enable_idle_logout`, `idle_minutes`), react to a new login with the `oliforge_session_control_session_started` action, and render their own panel below the settings form with the `oliforge_session_control_settings_after_core` action. The "apply to administrators / frontend users" switches still decide whether the plugin applies to a user at all.
 
 == Installation ==
 
@@ -78,6 +82,10 @@ Yes. Each site in the network keeps its own independent settings and session log
 Yes. The plugin removes its settings, legacy activity metadata, scheduled cleanup event, and session-log database table. On multisite, uninstall cleanup runs across all sites in the network.
 
 == Changelog ==
+
+= 2.3.0 =
+* Added extension points for add-ons such as OliForge Session Control Pro (per-role rules): the `oliforge_session_control_user_settings` filter, the `oliforge_session_control_session_started` action and the `oliforge_session_control_settings_after_core` action. Without an add-on the plugin behaves exactly as before.
+* A new `allow_remember` setting key lets an add-on switch Remember Me off for a user, so the normal session lifetime applies instead.
 
 = 2.2.2 =
 * Added the Plugin URI header linking to the plugin page on oliforge.io.
@@ -131,6 +139,9 @@ Yes. The plugin removes its settings, legacy activity metadata, scheduled cleanu
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.3.0 =
+Adds extension points for add-ons. No change in behavior or data without an add-on.
 
 = 2.2.2 =
 Metadata only: adds the plugin page link. No functional or data changes.

@@ -201,11 +201,40 @@ final class OliForge_Session_Control {
 			return $expiration;
 		}
 
-		if ( $remember ) {
+		$settings = $this->get_user_settings( $user_id, $settings );
+
+		// An add-on can switch Remember Me off for a user: the normal lifetime applies instead.
+		if ( $remember && ! empty( $settings['allow_remember'] ) ) {
 			return max( 1, absint( $settings['remember_days'] ) ) * DAY_IN_SECONDS;
 		}
 
 		return max( 1, absint( $settings['normal_hours'] ) ) * HOUR_IN_SECONDS;
+	}
+
+	/**
+	 * Returns the settings that apply to one user.
+	 *
+	 * Add-ons (for example per-role rules) adjust the values through the
+	 * oliforge_session_control_user_settings filter. Without an add-on the
+	 * general settings are returned unchanged, with Remember Me allowed.
+	 *
+	 * @param int                      $user_id  User ID.
+	 * @param array<string, int>|null  $settings General settings, read when omitted.
+	 * @return array<string, int>
+	 */
+	public function get_user_settings( int $user_id, ?array $settings = null ): array {
+		$settings = null === $settings ? $this->get_settings() : $settings;
+		$settings['allow_remember'] = 1;
+
+		/**
+		 * Filters the session settings that apply to one user.
+		 *
+		 * @param array<string, int> $settings Keys: normal_hours, remember_days, allow_remember, enable_idle_logout, idle_minutes (and any key an add-on adds).
+		 * @param int                $user_id  User ID.
+		 */
+		$filtered = apply_filters( 'oliforge_session_control_user_settings', $settings, $user_id );
+
+		return is_array( $filtered ) ? wp_parse_args( $filtered, $settings ) : $settings;
 	}
 
 	/**
@@ -498,6 +527,14 @@ final class OliForge_Session_Control {
 
 				<?php submit_button(); ?>
 			</form>
+			<?php
+			/**
+			 * Fires below the general settings form, for add-on panels (each add-on renders its own form).
+			 *
+			 * @param array<string, int> $settings General settings.
+			 */
+			do_action( 'oliforge_session_control_settings_after_core', $settings );
+			?>
 		</div>
 		<?php
 	}
@@ -1105,8 +1142,9 @@ final class OliForge_Session_Control {
 			$last_activity = $this->session_manager->last_seen( $user_id, $session_hash );
 		}
 
-		if ( ! empty( $settings['enable_idle_logout'] ) ) {
-			$idle_seconds = max( 1, absint( $settings['idle_minutes'] ) ) * MINUTE_IN_SECONDS;
+		$user_settings = $this->get_user_settings( $user_id, $settings );
+		if ( ! empty( $user_settings['enable_idle_logout'] ) ) {
+			$idle_seconds = max( 1, absint( $user_settings['idle_minutes'] ) ) * MINUTE_IN_SECONDS;
 			if ( $last_activity > 0 && ( $now - $last_activity ) > $idle_seconds ) {
 				OliForge_Idle_Timeout::expire_current_request();
 			}
@@ -1126,6 +1164,18 @@ final class OliForge_Session_Control {
 		$ua  = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
 		$now = time();
 		$this->session_manager->log_raw_token( $user_id, $token, $ip, $ua, $now );
+
+		$settings      = $this->get_settings();
+		$user_settings = $this->should_apply_to_user( $user_id, $settings ) ? $this->get_user_settings( $user_id, $settings ) : null;
+
+		/**
+		 * Fires after a new login session has been recorded.
+		 *
+		 * @param int                     $user_id       User ID.
+		 * @param string                  $session_hash  SHA-256 verifier of the new session (the key WordPress uses in session_tokens).
+		 * @param array<string, int>|null $user_settings Settings that apply to the user, or null when the plugin does not apply to this user.
+		 */
+		do_action( 'oliforge_session_control_session_started', $user_id, $this->session_manager->hash_raw_token( $token ), $user_settings );
 	}
 
 	public function cleanup_session_log(): void {
