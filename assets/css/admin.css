@@ -512,3 +512,28 @@
     color:var(--oli-ink);
     font-weight:600
 }
+
+.oliforge-session-control-ui .oliforge-upgrade {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:12px;
+    margin-top:16px;
+    padding-top:16px;
+    border-top:1px solid var(--oli-border);
+    color:var(--oli-body)
+}
+
+.oliforge-session-control-ui .button.oliforge-upgrade__btn {
+    background:var(--oli-primary-tint);
+    border-color:var(--oli-primary-tint-border);
+    color:var(--oli-primary-active);
+    font-weight:600
+}
+
+.oliforge-session-control-ui .button.oliforge-upgrade__btn:hover,
+.oliforge-session-control-ui .button.oliforge-upgrade__btn:focus {
+    background:var(--oli-primary);
+    border-color:var(--oli-primary);
+    color:#fff
+}

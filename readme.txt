@@ -4,7 +4,7 @@ Tags: session, security, login, authentication, timeout
 Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 2.3.0
+Stable tag: 2.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -38,6 +38,14 @@ The plugin uses the WordPress Settings API and native authentication hooks. It d
 
 Settings are available under Settings > OliForge Session Control, and the session log under its Active Sessions tab.
 
+= Privacy =
+
+* The session log stores, for every login, the user ID, the visitor's IP address (as sent by the server, not hashed), the browser user agent and two timestamps. It is shown only to administrators.
+* Log rows are deleted automatically after the retention period you set under Settings > OliForge Session Control (90 days by default), and Delete from List removes a row immediately.
+* Uninstalling the plugin drops the log table and all settings.
+* Nothing is sent to an external service.
+* The plugin adds a suggested paragraph for your privacy policy under Settings > Privacy > Policy Guide.
+
 = Extending the plugin =
 
 Add-ons can adjust the settings per user with the `oliforge_session_control_user_settings` filter (keys: `normal_hours`, `remember_days`, `allow_remember`, `enable_idle_logout`, `idle_minutes`), react to a new login with the `oliforge_session_control_session_started` action, and render their own panel below the settings form with the `oliforge_session_control_settings_after_core` action. The "apply to administrators / frontend users" switches still decide whether the plugin applies to a user at all.
@@ -63,7 +71,7 @@ No. The plugin does not connect to external services or transmit user data.
 
 = What data does the plugin store? =
 
-The plugin stores one settings option, a last-activity timestamp in user meta while idle logout is enabled, and a session-log database table recording each login's user, IP address, user agent, login time and last-seen time.
+The plugin stores one settings option and a session-log database table. Each log row holds the user, a SHA-256 verifier of the session token (never the token itself), the IP address, the user agent, the login time and the last-seen time. The last-seen time is also what idle logout uses, so no extra user meta is written. See the Privacy section below.
 
 = Will sessions that existed before I updated the plugin show up in the log? =
 
@@ -81,7 +89,18 @@ Yes. Each site in the network keeps its own independent settings and session log
 
 Yes. The plugin removes its settings, legacy activity metadata, scheduled cleanup event, and session-log database table. On multisite, uninstall cleanup runs across all sites in the network.
 
+== Screenshots ==
+
+1. Settings: the session lifetime, Remember Me lifetime, idle logout, who the rules apply to and how long the log is kept.
+2. Active Sessions: a log of every login with user, device, IP address and status. Terminate a live session or remove a row from the list.
+3. Search the log by user or filter it by role.
+
 == Changelog ==
+
+= 2.3.1 =
+* Prepared the plugin for the WordPress.org directory: added the Author URI header and replaced the 96 KB admin logo with a 10 KB, 128 px version (moved to assets/images/).
+* Added a suggested paragraph for the site's privacy policy (Settings > Privacy > Policy Guide) and a Privacy section to the readme that lists exactly what the session log stores.
+* Corrected the readme: the last-seen time used for idle logout is stored in the session log, not in user meta.
 
 = 2.3.0 =
 * Added extension points for add-ons such as OliForge Session Control Pro (per-role rules): the `oliforge_session_control_user_settings` filter, the `oliforge_session_control_session_started` action and the `oliforge_session_control_settings_after_core` action. Without an add-on the plugin behaves exactly as before.

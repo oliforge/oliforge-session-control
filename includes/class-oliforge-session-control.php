@@ -140,6 +140,10 @@ final class OliForge_Session_Control {
 			'plugin_action_links_' . plugin_basename( OLIFORGE_SESSION_CONTROL_FILE ),
 			array( $this, 'add_settings_link' )
 		);
+
+		if ( is_admin() ) {
+			add_action( 'admin_init', array( $this, 'add_privacy_policy_content' ) );
+		}
 	}
 
 	public static function deactivate( bool $network_wide = false ): void {
@@ -526,6 +530,12 @@ final class OliForge_Session_Control {
 				</table>
 
 				<?php submit_button(); ?>
+				<?php if ( ! defined( 'OLIFORGE_SCP_VERSION' ) ) : ?>
+					<div class="oliforge-upgrade">
+						<span class="oliforge-upgrade__text"><?php echo esc_html__( 'Need different session rules for each user role?', 'oliforge-session-control' ); ?></span>
+						<a class="button oliforge-upgrade__btn" href="<?php echo esc_url( 'https://oliforge.io/plugins/oliforge-session-control-pro/' ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Get a Pro version', 'oliforge-session-control' ); ?></a>
+					</div>
+				<?php endif; ?>
 			</form>
 			<?php
 			/**
@@ -550,7 +560,7 @@ final class OliForge_Session_Control {
 		?>
 		<div class="oliforge-header">
 			<div class="oliforge-header__brand">
-				<img class="oliforge-header__logo" src="<?php echo esc_url( OLIFORGE_SESSION_CONTROL_URL . 'src/OliForge_logo.png' ); ?>" alt="<?php esc_attr_e( 'OliForge', 'oliforge-session-control' ); ?>" width="64" height="64">
+				<img class="oliforge-header__logo" src="<?php echo esc_url( OLIFORGE_SESSION_CONTROL_URL . 'assets/images/oliforge-logo.png' ); ?>" alt="<?php esc_attr_e( 'OliForge', 'oliforge-session-control' ); ?>" width="64" height="64">
 				<div class="oliforge-header__brandtext">
 					<span class="oliforge-header__name"><?php echo esc_html__( 'OliForge', 'oliforge-session-control' ); ?></span>
 					<span class="oliforge-header__tagline"><?php echo esc_html__( 'Engineering without complexity.', 'oliforge-session-control' ); ?></span>
@@ -1199,5 +1209,23 @@ final class OliForge_Session_Control {
 		array_unshift( $links, $settings_link );
 
 		return $links;
+	}
+
+	/**
+	 * Suggested privacy-policy text (Settings > Privacy > Policy Guide).
+	 */
+	public function add_privacy_policy_content(): void {
+		if ( ! function_exists( 'wp_add_privacy_policy_content' ) ) {
+			return;
+		}
+		$settings = $this->get_settings();
+		$text     = '<h2>' . esc_html__( 'Login sessions', 'oliforge-session-control' ) . '</h2>';
+		$text    .= '<p class="privacy-policy-tutorial">' . esc_html__( 'OliForge Session Control keeps a log of logins. It sends no data to any external service.', 'oliforge-session-control' ) . '</p>';
+		$text    .= '<p>' . sprintf(
+			/* translators: %d: number of days the session log is kept. */
+			esc_html__( 'When you log in to this site, we record your user account, the IP address and browser (user agent) you used, and the time of the login and of your last activity. We keep this log for %d days to help protect your account, and you can ask us to delete it.', 'oliforge-session-control' ),
+			(int) $settings['log_retention_days']
+		) . '</p>';
+		wp_add_privacy_policy_content( 'OliForge Session Control', wp_kses_post( $text ) );
 	}
 }
