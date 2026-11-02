@@ -100,6 +100,7 @@ Yes. The plugin removes its settings, legacy activity metadata, scheduled cleanu
 = 2.3.1 =
 * Prepared the plugin for the WordPress.org directory: added the Author URI header and replaced the 96 KB admin logo with a 10 KB, 128 px version (moved to assets/images/).
 * Added a suggested paragraph for the site's privacy policy (Settings > Privacy > Policy Guide) and a Privacy section to the readme that lists exactly what the session log stores.
+* Added one "Get a Pro version" prompt under the settings form. It is hidden when OliForge Session Control Pro is active.
 * Corrected the readme: the last-seen time used for idle logout is stored in the session log, not in user meta.
 
 = 2.3.0 =
