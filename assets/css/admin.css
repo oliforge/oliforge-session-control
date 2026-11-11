@@ -537,3 +537,7 @@
     border-color:var(--oli-primary);
     color:#fff
 }
+
+.oliforge-session-control-ui .wp-list-table .column-user {
+    width:30%
+}
