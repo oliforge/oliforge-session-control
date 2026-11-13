@@ -4,7 +4,7 @@ Tags: session, security, login, authentication, timeout
 Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 2.3.1
+Stable tag: 2.3.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -96,6 +96,10 @@ Yes. The plugin removes its settings, legacy activity metadata, scheduled cleanu
 3. Search the log by user or filter it by role.
 
 == Changelog ==
+
+= 2.3.2 =
+* The Active Sessions table's User column is wider, so e-mail addresses are no longer broken in the middle of a word.
+* Bulk actions on the Active Sessions and Network Sessions screens now sanitize the submitted action values before comparing them.
 
 = 2.3.1 =
 * Prepared the plugin for the WordPress.org directory: added the Author URI header and replaced the 96 KB admin logo with a 10 KB, 128 px version (moved to assets/images/).

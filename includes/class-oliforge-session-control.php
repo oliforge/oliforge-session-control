@@ -735,11 +735,12 @@ final class OliForge_Session_Control {
 			exit;
 		}
 
-		$action = '';
-		if ( isset( $_REQUEST['action'] ) && '-1' !== $_REQUEST['action'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- verified via check_admin_referer() below.
-			$action = sanitize_key( wp_unslash( $_REQUEST['action'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		} elseif ( isset( $_REQUEST['action2'] ) && '-1' !== $_REQUEST['action2'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$action = sanitize_key( wp_unslash( $_REQUEST['action2'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- the bulk action nonce is verified with check_admin_referer() below before anything is changed.
+		$action  = isset( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( $_REQUEST['action'] ) ) : '';
+		$action2 = isset( $_REQUEST['action2'] ) ? sanitize_key( wp_unslash( $_REQUEST['action2'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		if ( '' === $action || '-1' === $action ) {
+			$action = ( '-1' === $action2 ) ? '' : $action2;
 		}
 
 		if ( in_array( $action, array( 'terminate', 'delete' ), true ) && isset( $_REQUEST['session'] ) ) {
@@ -920,11 +921,12 @@ final class OliForge_Session_Control {
 			exit;
 		}
 
-		$action = '';
-		if ( isset( $_REQUEST['action'] ) && '-1' !== $_REQUEST['action'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- verified via check_admin_referer() below.
-			$action = sanitize_key( wp_unslash( $_REQUEST['action'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		} elseif ( isset( $_REQUEST['action2'] ) && '-1' !== $_REQUEST['action2'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$action = sanitize_key( wp_unslash( $_REQUEST['action2'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- the bulk action nonce is verified with check_admin_referer() below before anything is changed.
+		$action  = isset( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( $_REQUEST['action'] ) ) : '';
+		$action2 = isset( $_REQUEST['action2'] ) ? sanitize_key( wp_unslash( $_REQUEST['action2'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		if ( '' === $action || '-1' === $action ) {
+			$action = ( '-1' === $action2 ) ? '' : $action2;
 		}
 
 		if ( in_array( $action, array( 'terminate', 'delete' ), true ) && isset( $_REQUEST['session'] ) ) {
